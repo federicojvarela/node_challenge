@@ -13,10 +13,7 @@ use clap::Parser;
 use codec::BitcoinCodec;
 use futures::{SinkExt, StreamExt, TryFutureExt};
 use rand::Rng;
-use std::io;
-
 use tokio::net::TcpStream;
-
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tokio_util::codec::Framed;
@@ -53,31 +50,12 @@ async fn main() -> anyhow::Result<()> {
     Ok(perform_handshake(&mut stream, &remote_address, local_address).await?)
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ConnectionError {
-    #[error("Failed to connect to {0}: {1}")]
-    ConnectionFailed(SocketAddr, io::Error),
-
-    #[error("Connection to {0} timed out")]
-    ConnectionTimedOut(SocketAddr),
-
-    #[error("Unexpected error during connection to {0}: {1}")]
-    UnexpectedError(SocketAddr, io::Error),
-}
-
-async fn connect(
-    remote_address: &SocketAddr,
-) -> Result<Framed<TcpStream, BitcoinCodec>, ConnectionError> {
-    let connection = TcpStream::connect(remote_address)
-        .await
-        .map_err(|e| ConnectionError::ConnectionFailed(*remote_address, e));
-
-    let stream = match timeout(Duration::from_millis(500), connection).await {
-        Ok(Ok(stream)) => stream,
-        Ok(Err(e)) => return Err(ConnectionError::ConnectionFailed(*remote_address, e)),
-        Err(_) => return Err(ConnectionError::ConnectionTimedOut(*remote_address)),
-    };
-
+async fn connect(remote_address: &SocketAddr) -> Result<Framed<TcpStream, BitcoinCodec>, Error> {
+    let connection = TcpStream::connect(remote_address).map_err(Error::ConnectionFailed);
+    // Most nodes will quickly respond. If they don't, we'll probably want to talk to other nodes instead.
+    let stream = timeout(Duration::from_millis(500), connection)
+        .map_err(Error::ConnectionTimedOut)
+        .await??;
     let framed = Framed::new(stream, BitcoinCodec {});
     Ok(framed)
 }
@@ -153,7 +131,7 @@ fn build_version_message(
 
     let sender = Address::new(sender_address, SERVICES);
     let timestamp = chrono::Utc::now().timestamp();
-    let receiver = Address::new(&receiver_address, SERVICES);
+    let receiver = Address::new(receiver_address, SERVICES);
     let nonce = rand::thread_rng().gen();
     let user_agent = USER_AGENT.to_string();
 
