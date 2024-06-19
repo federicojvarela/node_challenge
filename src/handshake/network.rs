@@ -9,6 +9,8 @@ use tokio_util::codec::Framed;
 
 use futures::TryFutureExt;
 
+const TIMEOUT_DURATION: Duration = Duration::from_millis(500);
+
 // Function to create a TcpStream connection to a given remote address.
 // It returns a TcpStream wrapped in a Result, handling connection errors.
 async fn create_tcp_stream(remote_address: &SocketAddr) -> Result<TcpStream, ConnectionError> {
@@ -36,6 +38,6 @@ pub async fn connect(
     remote_address: &SocketAddr,
 ) -> Result<Framed<TcpStream, BitcoinCodec>, ConnectionError> {
     let connection_future = create_tcp_stream(remote_address);
-    let stream = apply_timeout_to_connection(connection_future, Duration::from_millis(500)).await?;
+    let stream = apply_timeout_to_connection(connection_future, TIMEOUT_DURATION).await?;
     Ok(Framed::new(stream, BitcoinCodec {}))
 }
