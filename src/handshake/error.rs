@@ -15,4 +15,7 @@ pub enum ConnectionError {
 
     #[error("Sending failed")]
     SendingFailed(io::Error),
+
+    #[error("Invalid address provided")]
+    InvalidAddress,
 }
