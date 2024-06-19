@@ -1,4 +1,3 @@
-#![allow(unused)]
 mod codec;
 
 use std::net::SocketAddr;
@@ -45,6 +44,15 @@ async fn main() -> anyhow::Result<()> {
         .local_address
         .parse::<SocketAddr>()
         .context("Invalid local address")?;
+
+    // Add checks to filter out IPv6 addresses
+    if remote_address.is_ipv6() {
+        return Err(anyhow::anyhow!("IPv6 addresses are not supported"));
+    }
+    if local_address.is_ipv6() {
+        return Err(anyhow::anyhow!("IPv6 addresses are not supported"));
+    }
+
     let mut stream: Framed<TcpStream, BitcoinCodec> = connect(&remote_address).await?;
 
     Ok(perform_handshake(&mut stream, &remote_address, local_address).await?)
@@ -71,34 +79,47 @@ async fn perform_handshake(
         NetworkMessage::Version(build_version_message(peer_address, &local_address)),
     );
 
-    stream
-        .send(version_message)
+    // Send with timeout
+    timeout(Duration::from_secs(5), stream.send(version_message))
         .await
+        .map_err(|_| {
+            Error::SendingFailed(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Send timed out",
+            ))
+        })?
         .map_err(Error::SendingFailed)?;
 
-    while let Some(result) = stream.next().await {
+    // Receive with timeout
+    while let Ok(Some(result)) = timeout(Duration::from_secs(5), stream.next()).await {
         match result {
             Ok(message) => match message.payload() {
                 NetworkMessage::Version(remote_version) => {
                     tracing::info!("Version message: {:?}", remote_version);
 
-                    stream
-                        .send(RawNetworkMessage::new(
-                            Network::Bitcoin.magic(),
-                            NetworkMessage::Verack,
-                        ))
+                    let verack_message =
+                        RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Verack);
+
+                    // Send Verack with timeout
+                    timeout(Duration::from_secs(5), stream.send(verack_message))
                         .await
+                        .map_err(|_| {
+                            Error::SendingFailed(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "Send timed out",
+                            ))
+                        })?
                         .map_err(Error::SendingFailed)?;
 
                     return Ok(());
                 }
                 other_message => {
-                    // We're only interested in the version message right now. Keep the loop running.
                     tracing::debug!("Unsupported message: {:?}", other_message);
                 }
             },
             Err(err) => {
                 tracing::error!("Decoding error: {}", err);
+                return Err(Error::ConnectionLost);
             }
         }
     }
@@ -166,4 +187,64 @@ pub fn init_tracing() {
         .with(fmt_layer)
         .with(env)
         .init();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn test_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let local_addr = listener.local_addr().unwrap();
+
+        let connect_result = connect(&local_addr).await;
+        assert!(connect_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_perform_handshake() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let local_addr = listener.local_addr().unwrap();
+        let (server_socket, _) = listener.accept().await.unwrap();
+
+        tokio::spawn(async move {
+            let mut framed = Framed::new(server_socket, BitcoinCodec {});
+            let version_msg = RawNetworkMessage::new(
+                Network::Bitcoin.magic(),
+                NetworkMessage::Version(build_version_message(&local_addr, &local_addr)),
+            );
+            framed.send(version_msg).await.unwrap();
+            // Simulate receiving a Verack message which is expected in a real handshake
+            let verack_msg =
+                RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Verack);
+            framed.send(verack_msg).await.unwrap();
+        });
+
+        let client_socket = TcpStream::connect(local_addr).await.unwrap();
+        let mut framed_client = Framed::new(client_socket, BitcoinCodec {});
+
+        // Adding a timeout to the handshake operation
+        let handshake_result = timeout(
+            Duration::from_secs(10),
+            perform_handshake(&mut framed_client, &local_addr, local_addr),
+        )
+        .await;
+
+        assert!(
+            handshake_result.is_ok(),
+            "Handshake did not complete in time"
+        );
+    }
+
+    #[test]
+    fn test_build_version_message() {
+        let addr = "127.0.0.1:8333".parse::<SocketAddr>().unwrap();
+        let version_message = build_version_message(&addr, &addr);
+
+        assert_eq!(version_message.user_agent, "/Satoshi:25.0.0/");
+        assert_eq!(version_message.start_height, 0);
+        assert!(version_message.nonce != 0); // Nonce should be randomly generated
+    }
 }
