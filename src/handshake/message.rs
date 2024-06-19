@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
+use tracing::{info, error, debug};
 
 pub async fn perform_handshake(
     stream: &mut Framed<TcpStream, BitcoinCodec>,
@@ -25,35 +26,46 @@ pub async fn perform_handshake(
         NetworkMessage::Version(build_version_message(peer_address, &local_address)),
     );
 
+    info!("Sending version message to {}", peer_address);
     stream
         .send(version_message)
         .await
-        .map_err(ConnectionError::SendingFailed)?;
+        .map_err(|e| {
+            error!("Failed to send version message to {}: {}", peer_address, e);
+            ConnectionError::SendingFailed(e)
+        })?;
 
     while let Some(result) = stream.next().await {
         match result {
             Ok(message) => match message.payload() {
                 NetworkMessage::Version(remote_version) => {
-                    tracing::info!("Version message: {:?}", remote_version);
+                    info!("Received version message from {}: {:?}", peer_address, remote_version);
+                    let verack_message = RawNetworkMessage::new(
+                        Network::Bitcoin.magic(),
+                        NetworkMessage::Verack,
+                    );
+                    info!("Sending Verack to {}", peer_address);
                     stream
-                        .send(RawNetworkMessage::new(
-                            Network::Bitcoin.magic(),
-                            NetworkMessage::Verack,
-                        ))
+                        .send(verack_message)
                         .await
-                        .map_err(ConnectionError::SendingFailed)?;
+                        .map_err(|e| {
+                            error!("Failed to send Verack to {}: {}", peer_address, e);
+                            ConnectionError::SendingFailed(e)
+                        })?;
                     return Ok(());
                 }
                 other_message => {
-                    tracing::debug!("Unsupported message: {:?}", other_message);
+                    debug!("Received unsupported message from {}: {:?}", peer_address, other_message);
                 }
             },
             Err(err) => {
-                tracing::error!("Decoding error: {}", err);
+                error!("Decoding error from {}: {}", peer_address, err);
+                return Err(ConnectionError::ConnectionLost);
             }
         }
     }
 
+    error!("Connection lost with {}", peer_address);
     Err(ConnectionError::ConnectionLost)
 }
 

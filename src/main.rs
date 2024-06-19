@@ -10,6 +10,7 @@ use tokio_util::codec::Framed;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
     handshake::cli::init_tracing();
     let args = model::args::Args::parse();
 

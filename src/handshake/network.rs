@@ -11,33 +11,40 @@ use futures::TryFutureExt;
 
 const TIMEOUT_DURATION: Duration = Duration::from_millis(500);
 
-// Function to create a TcpStream connection to a given remote address.
-// It returns a TcpStream wrapped in a Result, handling connection errors.
+use log::{info, error};
+
 async fn create_tcp_stream(remote_address: &SocketAddr) -> Result<TcpStream, ConnectionError> {
+    info!("Attempting to connect to {}", remote_address);
     TcpStream::connect(remote_address)
-        .map_err(ConnectionError::ConnectionFailed)
+        .map_err(|e| {
+            error!("Failed to connect to {}: {}", remote_address, e);
+            ConnectionError::ConnectionFailed(e)
+        })
         .await
 }
 
-// Function to apply a timeout to a connection attempt.
-// It takes a future representing the connection attempt and a duration for the timeout.
-// Returns a Result with either the established TcpStream or a ConectionError if timed out or other errors occur.
 async fn apply_timeout_to_connection(
     connection: impl std::future::Future<Output = Result<TcpStream, ConnectionError>>,
     duration: Duration,
 ) -> Result<TcpStream, ConnectionError> {
     match timeout(duration, connection).await {
-        Ok(result) => result,
-        Err(e) => Err(ConnectionError::ConnectionTimedOut(e)),
+        Ok(result) => {
+            info!("Connection established within timeout");
+            result
+        },
+        Err(e) => {
+            error!("Connection attempt timed out after {:?}", duration);
+            Err(ConnectionError::ConnectionTimedOut(e))
+        },
     }
 }
 
-// Public function to establish a connection to a remote address and wrap the connection in a BitcoinCodec.
-// Returns a Framed<TcpStream, BitcoinCodec> which can be used to send and receive Bitcoin protocol messages.
 pub async fn connect(
     remote_address: &SocketAddr,
 ) -> Result<Framed<TcpStream, BitcoinCodec>, ConnectionError> {
+    info!("Starting connection process to {}", remote_address);
     let connection_future = create_tcp_stream(remote_address);
     let stream = apply_timeout_to_connection(connection_future, TIMEOUT_DURATION).await?;
+    info!("Connection successfully established and wrapped with BitcoinCodec");
     Ok(Framed::new(stream, BitcoinCodec {}))
 }
