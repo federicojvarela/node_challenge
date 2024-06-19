@@ -1,0 +1,8 @@
+/Users/federicovarela/Downloads/challenge/target/debug/deps/libutf8parse-8deffec2e41e303b.rmeta: /Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/lib.rs /Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/types.rs
+
+/Users/federicovarela/Downloads/challenge/target/debug/deps/libutf8parse-8deffec2e41e303b.rlib: /Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/lib.rs /Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/types.rs
+
+/Users/federicovarela/Downloads/challenge/target/debug/deps/utf8parse-8deffec2e41e303b.d: /Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/lib.rs /Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/types.rs
+
+/Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/lib.rs:
+/Users/federicovarela/.cargo/registry/src/index.crates.io-6f17d22bba15001f/utf8parse-0.2.1/src/types.rs:
