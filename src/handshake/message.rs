@@ -1,11 +1,13 @@
 use crate::handshake::codec::BitcoinCodec;
 use crate::handshake::error::ConnectionError;
+use crate::tools::config;
 
 use bitcoin::p2p::message::{NetworkMessage, RawNetworkMessage};
 
 use bitcoin::p2p::message_network::VersionMessage;
 use bitcoin::p2p::{Address, ServiceFlags};
 use bitcoin::Network;
+
 use futures::{SinkExt, StreamExt};
 use rand::Rng;
 use std::net::SocketAddr;
@@ -59,15 +61,15 @@ pub fn build_version_message(
     receiver_address: &SocketAddr,
     sender_address: &SocketAddr,
 ) -> VersionMessage {
-    const START_HEIGHT: i32 = 0;
-    const USER_AGENT: &str = "/Satoshi:25.0.0/";
+    let start_height: i32 = config::get_env_var_as_int("START_HEIGHT");
+    let user_agent: String = config::get_env_var_as_string("USER_AGENT");
+
     const SERVICES: ServiceFlags = ServiceFlags::NONE;
 
     let sender = Address::new(sender_address, SERVICES);
     let timestamp = chrono::Utc::now().timestamp();
     let receiver = Address::new(receiver_address, SERVICES);
     let nonce = rand::thread_rng().gen();
-    let user_agent = USER_AGENT.to_string();
 
     VersionMessage::new(
         SERVICES,
@@ -76,6 +78,6 @@ pub fn build_version_message(
         sender,
         nonce,
         user_agent,
-        START_HEIGHT,
+        start_height,
     )
 }

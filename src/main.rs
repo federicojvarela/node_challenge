@@ -1,5 +1,6 @@
 mod handshake;
 mod model;
+mod tools;
 
 use anyhow::Context;
 use clap::Parser;

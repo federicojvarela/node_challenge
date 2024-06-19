@@ -1,16 +1,17 @@
 [package]
-name = "quick-challenge"
+name = "btc-challenge"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dotenv = "0.15.0"
 anyhow = "1.0"
 bitcoin = "0.31"
 bytes = "1.5"
 chrono = { version = "0.4", default-features = false, features = [
-    "serde",
-    "clock",
-    "std",
+  "serde",
+  "clock",
+  "std",
 ] }
 clap = { version = "4.4", features = ["derive"] }
 futures = "0.3"
