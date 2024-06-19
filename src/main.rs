@@ -1,5 +1,6 @@
 #![allow(unused)]
 mod codec;
+mod error;
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -37,10 +38,12 @@ async fn main() -> anyhow::Result<()> {
     init_tracing();
     let args = Args::parse();
 
-    let remote_address = args.remote_address
+    let remote_address = args
+        .remote_address
         .parse::<SocketAddr>()
         .context("Invalid remote address")?;
-    let local_address = args.local_address
+    let local_address = args
+        .local_address
         .parse::<SocketAddr>()
         .context("Invalid local address")?;
     let mut stream: Framed<TcpStream, BitcoinCodec> = connect(&remote_address).await?;
@@ -48,11 +51,14 @@ async fn main() -> anyhow::Result<()> {
     Ok(perform_handshake(&mut stream, &remote_address, local_address).await?)
 }
 
-async fn connect(remote_address: &SocketAddr) -> Result<Framed<TcpStream, BitcoinCodec>, Error> {
-    let connection = TcpStream::connect(remote_address).map_err(Error::ConnectionFailed);
+async fn connect(
+    remote_address: &SocketAddr,
+) -> Result<Framed<TcpStream, BitcoinCodec>, error::ConectionError> {
+    let connection =
+        TcpStream::connect(remote_address).map_err(error::ConectionError::ConnectionFailed);
     // Most nodes will quickly respond. If they don't, we'll probably want to talk to other nodes instead.
     let stream = timeout(Duration::from_millis(500), connection)
-        .map_err(Error::ConnectionTimedOut)
+        .map_err(error::ConectionError::ConnectionTimedOut)
         .await??;
     let framed = Framed::new(stream, BitcoinCodec {});
     Ok(framed)
@@ -63,7 +69,7 @@ async fn perform_handshake(
     stream: &mut Framed<TcpStream, BitcoinCodec>,
     peer_address: &SocketAddr,
     local_address: SocketAddr,
-) -> Result<(), Error> {
+) -> Result<(), error::ConectionError> {
     let version_message = RawNetworkMessage::new(
         Network::Bitcoin.magic(),
         NetworkMessage::Version(build_version_message(peer_address, &local_address)),
@@ -72,7 +78,7 @@ async fn perform_handshake(
     stream
         .send(version_message)
         .await
-        .map_err(Error::SendingFailed)?;
+        .map_err(error::ConectionError::SendingFailed)?;
 
     while let Some(result) = stream.next().await {
         match result {
@@ -86,7 +92,7 @@ async fn perform_handshake(
                             NetworkMessage::Verack,
                         ))
                         .await
-                        .map_err(Error::SendingFailed)?;
+                        .map_err(error::ConectionError::SendingFailed)?;
 
                     return Ok(());
                 }
@@ -101,19 +107,7 @@ async fn perform_handshake(
         }
     }
 
-    Err(Error::ConnectionLost)
-}
-
-#[derive(Debug, thiserror::Error)]
-enum Error {
-    #[error("Connection failed: {0:?}")]
-    ConnectionFailed(std::io::Error),
-    #[error("Connection timed out")]
-    ConnectionTimedOut(Elapsed),
-    #[error("Connection lost")]
-    ConnectionLost,
-    #[error("Sending failed")]
-    SendingFailed(std::io::Error),
+    Err(error::ConectionError::ConnectionLost)
 }
 
 fn build_version_message(
@@ -129,7 +123,7 @@ fn build_version_message(
 
     let sender = Address::new(sender_address, SERVICES);
     let timestamp = chrono::Utc::now().timestamp();
-    let receiver = Address::new(&receiver_address, SERVICES);
+    let receiver = Address::new(receiver_address, SERVICES);
     let nonce = rand::thread_rng().gen();
     let user_agent = USER_AGENT.to_string();
 
