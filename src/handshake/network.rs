@@ -1,5 +1,5 @@
 use crate::handshake::codec::BitcoinCodec;
-use crate::handshake::error::ConectionError;
+use crate::handshake::error::ConnectionError;
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -11,9 +11,9 @@ use futures::TryFutureExt;
 
 // Function to create a TcpStream connection to a given remote address.
 // It returns a TcpStream wrapped in a Result, handling connection errors.
-async fn create_tcp_stream(remote_address: &SocketAddr) -> Result<TcpStream, ConectionError> {
+async fn create_tcp_stream(remote_address: &SocketAddr) -> Result<TcpStream, ConnectionError> {
     TcpStream::connect(remote_address)
-        .map_err(ConectionError::ConnectionFailed)
+        .map_err(ConnectionError::ConnectionFailed)
         .await
 }
 
@@ -21,12 +21,12 @@ async fn create_tcp_stream(remote_address: &SocketAddr) -> Result<TcpStream, Con
 // It takes a future representing the connection attempt and a duration for the timeout.
 // Returns a Result with either the established TcpStream or a ConectionError if timed out or other errors occur.
 async fn apply_timeout_to_connection(
-    connection: impl std::future::Future<Output = Result<TcpStream, ConectionError>>,
+    connection: impl std::future::Future<Output = Result<TcpStream, ConnectionError>>,
     duration: Duration,
-) -> Result<TcpStream, ConectionError> {
+) -> Result<TcpStream, ConnectionError> {
     match timeout(duration, connection).await {
         Ok(result) => result,
-        Err(e) => Err(ConectionError::ConnectionTimedOut(e)),
+        Err(e) => Err(ConnectionError::ConnectionTimedOut(e)),
     }
 }
 
@@ -34,7 +34,7 @@ async fn apply_timeout_to_connection(
 // Returns a Framed<TcpStream, BitcoinCodec> which can be used to send and receive Bitcoin protocol messages.
 pub async fn connect(
     remote_address: &SocketAddr,
-) -> Result<Framed<TcpStream, BitcoinCodec>, ConectionError> {
+) -> Result<Framed<TcpStream, BitcoinCodec>, ConnectionError> {
     let connection_future = create_tcp_stream(remote_address);
     let stream = apply_timeout_to_connection(connection_future, Duration::from_millis(500)).await?;
     Ok(Framed::new(stream, BitcoinCodec {}))

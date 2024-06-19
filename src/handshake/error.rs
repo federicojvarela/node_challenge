@@ -3,7 +3,7 @@ use thiserror::Error;
 use tokio::time::error::Elapsed;
 
 #[derive(Debug, Error)]
-pub enum ConectionError {
+pub enum ConnectionError {
     #[error("Connection failed: {0:?}")]
     ConnectionFailed(io::Error),
 

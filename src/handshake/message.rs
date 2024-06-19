@@ -1,5 +1,5 @@
 use crate::handshake::codec::BitcoinCodec;
-use crate::handshake::error::ConectionError;
+use crate::handshake::error::ConnectionError;
 
 use bitcoin::p2p::message::{NetworkMessage, RawNetworkMessage};
 
@@ -17,7 +17,7 @@ pub async fn perform_handshake(
     stream: &mut Framed<TcpStream, BitcoinCodec>,
     peer_address: &SocketAddr,
     local_address: SocketAddr,
-) -> Result<(), ConectionError> {
+) -> Result<(), ConnectionError> {
     let version_message = RawNetworkMessage::new(
         Network::Bitcoin.magic(),
         NetworkMessage::Version(build_version_message(peer_address, &local_address)),
@@ -26,7 +26,7 @@ pub async fn perform_handshake(
     stream
         .send(version_message)
         .await
-        .map_err(ConectionError::SendingFailed)?;
+        .map_err(ConnectionError::SendingFailed)?;
 
     while let Some(result) = stream.next().await {
         match result {
@@ -39,7 +39,7 @@ pub async fn perform_handshake(
                             NetworkMessage::Verack,
                         ))
                         .await
-                        .map_err(ConectionError::SendingFailed)?;
+                        .map_err(ConnectionError::SendingFailed)?;
                     return Ok(());
                 }
                 other_message => {
@@ -52,7 +52,7 @@ pub async fn perform_handshake(
         }
     }
 
-    Err(ConectionError::ConnectionLost)
+    Err(ConnectionError::ConnectionLost)
 }
 
 pub fn build_version_message(
