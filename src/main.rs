@@ -13,7 +13,10 @@ use clap::Parser;
 use codec::BitcoinCodec;
 use futures::{SinkExt, StreamExt, TryFutureExt};
 use rand::Rng;
+use std::io;
+
 use tokio::net::TcpStream;
+
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tokio_util::codec::Framed;
@@ -37,10 +40,12 @@ async fn main() -> anyhow::Result<()> {
     init_tracing();
     let args = Args::parse();
 
-    let remote_address = args.remote_address
+    let remote_address = args
+        .remote_address
         .parse::<SocketAddr>()
         .context("Invalid remote address")?;
-    let local_address = args.local_address
+    let local_address = args
+        .local_address
         .parse::<SocketAddr>()
         .context("Invalid local address")?;
     let mut stream: Framed<TcpStream, BitcoinCodec> = connect(&remote_address).await?;
@@ -48,12 +53,31 @@ async fn main() -> anyhow::Result<()> {
     Ok(perform_handshake(&mut stream, &remote_address, local_address).await?)
 }
 
-async fn connect(remote_address: &SocketAddr) -> Result<Framed<TcpStream, BitcoinCodec>, Error> {
-    let connection = TcpStream::connect(remote_address).map_err(Error::ConnectionFailed);
-    // Most nodes will quickly respond. If they don't, we'll probably want to talk to other nodes instead.
-    let stream = timeout(Duration::from_millis(500), connection)
-        .map_err(Error::ConnectionTimedOut)
-        .await??;
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectionError {
+    #[error("Failed to connect to {0}: {1}")]
+    ConnectionFailed(SocketAddr, io::Error),
+
+    #[error("Connection to {0} timed out")]
+    ConnectionTimedOut(SocketAddr),
+
+    #[error("Unexpected error during connection to {0}: {1}")]
+    UnexpectedError(SocketAddr, io::Error),
+}
+
+async fn connect(
+    remote_address: &SocketAddr,
+) -> Result<Framed<TcpStream, BitcoinCodec>, ConnectionError> {
+    let connection = TcpStream::connect(remote_address)
+        .await
+        .map_err(|e| ConnectionError::ConnectionFailed(*remote_address, e));
+
+    let stream = match timeout(Duration::from_millis(500), connection).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(e)) => return Err(ConnectionError::ConnectionFailed(*remote_address, e)),
+        Err(_) => return Err(ConnectionError::ConnectionTimedOut(*remote_address)),
+    };
+
     let framed = Framed::new(stream, BitcoinCodec {});
     Ok(framed)
 }
