@@ -35,7 +35,7 @@ impl Encoder<RawNetworkMessage> for BitcoinCodec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::build_version_message;
+    use crate::handshake::message::build_version_message;
     use bitcoin::p2p::message::{NetworkMessage, RawNetworkMessage};
     use bitcoin::Network;
     use std::net::SocketAddr;

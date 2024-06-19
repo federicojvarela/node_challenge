@@ -1,43 +1,45 @@
-use std::net::SocketAddr;
-use bitcoin::p2p::message::{NetworkMessage, RawNetworkMessage};
-use bitcoin::p2p::message_network::VersionMessage;
-use bitcoin::Network;
-use tokio_util::codec::Framed;
-use tokio::net::TcpStream;
-use futures::{SinkExt, StreamExt};
-use crate::codec::BitcoinCodec;
-use thiserror::Error;
+use crate::handshake::codec::BitcoinCodec;
+use crate::handshake::error::ConectionError;
 
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Connection failed: {0:?}")]
-    ConnectionFailed(std::io::Error),
-    #[error("Connection timed out")]
-    ConnectionTimedOut(Elapsed),
-    #[error("Connection lost")]
-    ConnectionLost,
-    #[error("Sending failed")]
-    SendingFailed(std::io::Error),
-}
+use bitcoin::p2p::message::{NetworkMessage, RawNetworkMessage};
+
+use bitcoin::p2p::message_network::VersionMessage;
+use bitcoin::p2p::{Address, ServiceFlags};
+use bitcoin::Network;
+use futures::{SinkExt, StreamExt};
+use rand::Rng;
+use std::net::SocketAddr;
+
+use tokio::net::TcpStream;
+use tokio_util::codec::Framed;
 
 pub async fn perform_handshake(
     stream: &mut Framed<TcpStream, BitcoinCodec>,
     peer_address: &SocketAddr,
     local_address: SocketAddr,
-) -> Result<(), Error> {
+) -> Result<(), ConectionError> {
     let version_message = RawNetworkMessage::new(
         Network::Bitcoin.magic(),
         NetworkMessage::Version(build_version_message(peer_address, &local_address)),
     );
 
-    stream.send(version_message).await.map_err(Error::SendingFailed)?;
+    stream
+        .send(version_message)
+        .await
+        .map_err(ConectionError::SendingFailed)?;
 
     while let Some(result) = stream.next().await {
         match result {
             Ok(message) => match message.payload() {
                 NetworkMessage::Version(remote_version) => {
                     tracing::info!("Version message: {:?}", remote_version);
-                    stream.send(RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Verack)).await.map_err(Error::SendingFailed)?;
+                    stream
+                        .send(RawNetworkMessage::new(
+                            Network::Bitcoin.magic(),
+                            NetworkMessage::Verack,
+                        ))
+                        .await
+                        .map_err(ConectionError::SendingFailed)?;
                     return Ok(());
                 }
                 other_message => {
@@ -50,7 +52,7 @@ pub async fn perform_handshake(
         }
     }
 
-    Err(Error::ConnectionLost)
+    Err(ConectionError::ConnectionLost)
 }
 
 pub fn build_version_message(
@@ -63,7 +65,7 @@ pub fn build_version_message(
 
     let sender = Address::new(sender_address, SERVICES);
     let timestamp = chrono::Utc::now().timestamp();
-    let receiver = Address::new(&receiver_address, SERVICES);
+    let receiver = Address::new(receiver_address, SERVICES);
     let nonce = rand::thread_rng().gen();
     let user_agent = USER_AGENT.to_string();
 
